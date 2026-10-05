@@ -1,0 +1,6 @@
+flask>=3.0
+requests>=2.31
+beautifulsoup4>=4.12
+gunicorn>=22.0; platform_system != "Windows"
+# Optional (JavaScript rendering bonus):
+# playwright>=1.44    then run:  playwright install chromium

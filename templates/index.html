@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Website Archive Submitter</title>
+<style>
+  :root{
+    --ink:#18212B; --muted:#5B6773; --paper:#EEF1F3; --panel:#FFFFFF; --rule:#CFD6DD;
+    --accent:#0B6E8A; --ok:#1F7A4D; --warn:#A8741A; --bad:#B3261E;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{background:var(--ink);color:#fff;padding:14px 24px;display:flex;gap:24px;align-items:baseline;flex-wrap:wrap}
+  header h1{margin:0;font-size:18px;font-weight:650;letter-spacing:.2px}
+  #live{font-size:13px;color:#B8C4CE}
+  main{max-width:1280px;margin:0 auto;padding:20px 24px 60px}
+  section{background:var(--panel);border:1px solid var(--rule);border-radius:6px;margin-bottom:18px}
+  section>h2{margin:0;padding:12px 16px;font-size:15px;border-bottom:1px solid var(--rule)}
+  .body{padding:14px 16px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  input,select,button{font:inherit}
+  input[type=text],input[type=number],select{padding:7px 9px;border:1px solid var(--rule);border-radius:4px;background:#fff;color:var(--ink)}
+  input[type=text]{min-width:260px;flex:1}
+  button{padding:6px 12px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:4px;cursor:pointer}
+  button.ghost{background:#fff;color:var(--accent)}
+  button.danger{border-color:var(--bad);color:var(--bad);background:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid #7FC4D8;outline-offset:1px}
+  label.chk{display:flex;gap:5px;align-items:center;color:var(--muted);font-size:14px}
+  .ledger{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+  .ledger div{padding:12px 16px;border-right:1px solid var(--rule)}
+  .ledger div:last-child{border-right:0}
+  .ledger b{display:block;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .ledger span{color:var(--muted);font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-weight:600;color:var(--muted);font-size:13px;background:#F7F9FA}
+  td.num{font-variant-numeric:tabular-nums;text-align:right}
+  .scroll{overflow-x:auto}
+  .mono{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+  .pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;border:1px solid currentColor}
+  .success{color:var(--ok)} .failed,.broken{color:var(--bad)} .pending,.running,.scanning{color:var(--warn)} .never,.idle{color:var(--muted)} .interrupted{color:var(--bad)}
+  .acts{display:flex;gap:6px;flex-wrap:wrap}
+  .acts button{padding:3px 8px;font-size:13px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){.two{grid-template-columns:1fr}}
+  .muted{color:var(--muted)}
+  .err{color:var(--bad);font-size:13px}
+  dialog{border:1px solid var(--rule);border-radius:6px;max-width:900px;width:92%;padding:0}
+  dialog .body{max-height:70vh;overflow:auto}
+  dialog::backdrop{background:rgba(24,33,43,.45)}
+  #toast{position:fixed;right:18px;bottom:18px;background:var(--ink);color:#fff;padding:10px 14px;border-radius:4px;display:none;max-width:420px}
+  @media(prefers-reduced-motion:no-preference){.bar{transition:width .4s}}
+  .bar{height:6px;background:var(--rule);border-radius:3px;overflow:hidden;margin-top:4px;min-width:90px}
+  .bar i{display:block;height:100%;background:var(--ok)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Website Archive Submitter</h1>
+  <div id="live">Loading…</div>
+</header>
+<main>
+
+<section>
+  <h2>Add a website</h2>
+  <div class="body">
+    <div class="row">
+      <input type="text" id="newUrl" placeholder="example.com or https://example.com/blog" aria-label="Domain or URL">
+      <label class="chk">Max pages to crawl <input type="number" id="maxPages" value="500" min="1" style="width:90px"></label>
+      <label class="chk"><input type="checkbox" id="ext"> Record external links</label>
+      <label class="chk"><input type="checkbox" id="js"> Render JavaScript pages (needs Playwright)</label>
+      <button id="addBtn">Add website and start scan</button>
+    </div>
+    <div id="addErr" class="err"></div>
+  </div>
+</section>
+
+<section>
+  <div class="ledger" id="totals"></div>
+</section>
+
+<section>
+  <h2>Websites</h2>
+  <div class="body row" style="border-bottom:1px solid var(--rule)">
+    <span class="muted">Archive with:</span>
+    {% for key, label in services.items() %}
+    <label class="chk"><input type="checkbox" class="svc" value="{{key}}" {% if key=='wayback' %}checked{% endif %}> {{label}}</label>
+    {% endfor %}
+    <label class="chk"><input type="checkbox" id="rearch"> Re-archive URLs that already have a snapshot</label>
+    <span style="flex:1"></span>
+    <button id="queueAll">Queue all websites</button>
+    <button class="ghost" id="retryAll">Retry all failed</button>
+  </div>
+  <div class="scroll"><table id="domains">
+    <thead><tr><th>Website</th><th>Scan</th><th class="num">URLs</th><th class="num">Not queued</th><th class="num">Queued</th>
+      <th class="num">Success</th><th class="num">Failed</th><th>Progress</th><th>Last scan</th><th>Last submission</th><th>Actions</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</section>
+
+<div class="two">
+  <section>
+    <h2>Workers and speed</h2>
+    <div class="body"><div id="workers"></div><div id="perf" style="margin-top:10px"></div></div>
+  </section>
+  <section>
+    <h2>Recent scans</h2>
+    <div class="scroll"><table id="scans"><thead><tr><th>Website</th><th>Status</th><th class="num">Crawled</th><th class="num">Seen</th><th class="num">New</th><th class="num">Pages/s</th></tr></thead><tbody></tbody></table></div>
+  </section>
+</div>
+
+<section>
+  <h2>Repository: search URLs and archive history</h2>
+  <div class="body row" style="border-bottom:1px solid var(--rule)">
+    <input type="text" id="q" placeholder="Search by domain or URL" aria-label="Search">
+    <select id="fDomain"><option value="">All websites</option></select>
+    <select id="fService"><option value="">Any service</option>
+      {% for key, label in services.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select>
+    <select id="fStatus">
+      <option value="">Any status</option><option value="never">Never submitted</option><option value="pending">Pending</option>
+      <option value="running">Running</option><option value="success">Success</option><option value="failed">Failed</option>
+      <option value="broken">Broken URL (4xx/5xx/unreachable)</option></select>
+    <button id="searchBtn">Search</button>
+    <a id="csvLink" href="/api/export" style="margin-left:auto">Export CSV</a>
+    <a id="jsonLink" href="/api/export?format=json">Export JSON</a>
+  </div>
+  <div class="scroll"><table id="urls"><thead><tr><th>URL</th><th>HTTP</th><th>Found by</th><th>Latest submission</th><th>Archive link</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+  <div class="body row"><button class="ghost" id="prev">Previous</button><span id="pageInfo" class="muted"></span><button class="ghost" id="next">Next</button></div>
+</section>
+</main>
+
+<dialog id="dlg"><div class="body" id="dlgBody"></div><div class="body"><button class="ghost" onclick="dlg.close()">Close</button></div></dialog>
+<div id="toast" role="status"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LABEL = {{ services|tojson }};
+let page = 1, domainsCache = [];
+
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display='none',3500); }
+async function api(path, method='GET', body){
+  const r = await fetch(path, {method, headers:{'Content-Type':'application/json'}, body: body?JSON.stringify(body):undefined});
+  const j = await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||r.statusText); return j;
+}
+const services = () => [...document.querySelectorAll('.svc:checked')].map(e=>e.value);
+const ago = s => s ? new Date(s).toLocaleString() : '—';
+const pill = (s) => `<span class="pill ${esc(s)}">${esc(s)}</span>`;
+
+async function refreshStats(){
+  const s = await api('/api/stats');
+  domainsCache = s.domains;
+  const t = s.totals;
+  $('#totals').innerHTML = [['Websites',t.domains],['URLs discovered',t.total_urls],['Not queued yet',t.not_queued],
+    ['Queued',t.pending+t.running],['Successful',t.success],['Failed',t.failed],['Broken URLs',t.broken_urls]]
+    .map(([l,v])=>`<div><b>${v}</b><span>${l}</span></div>`).join('');
+  $('#domains tbody').innerHTML = s.domains.length ? s.domains.map(d=>{
+    const done = d.success + d.failed, all = done + d.pending + d.running;
+    const pct = all ? Math.round(100*done/all) : 0;
+    const scanning = d.scan_status==='scanning';
+    return `<tr>
+      <td><b>${esc(d.domain)}</b><div class="muted mono">${d.paused?'paused · ':''}${esc((d.services||[]).map(x=>LABEL[x]||x).join(', '))}</div></td>
+      <td>${pill(d.scan_status)}<div class="muted" style="font-size:12px;max-width:260px">${esc(d.scan_message||'')}</div></td>
+      <td class="num">${d.total_urls}</td><td class="num">${d.not_queued}</td><td class="num">${d.pending+d.running}</td>
+      <td class="num success">${d.success}</td><td class="num failed">${d.failed}</td>
+      <td>${pct}%<div class="bar"><i style="width:${pct}%"></i></div></td>
+      <td>${ago(d.last_scan_at)}</td><td>${ago(d.last_submit_at)}</td>
+      <td><div class="acts">
+        <button ${scanning?'disabled':''} onclick="act('scan',${d.id})">${d.scan_status==='interrupted'?'Resume scan':'Scan'}</button>
+        <button onclick="act('queue',${d.id})">Queue</button>
+        <button class="ghost" onclick="act('${d.paused?'resume':'pause'}',${d.id})">${d.paused?'Resume queue':'Pause queue'}</button>
+        <button class="ghost" onclick="act('retry',${d.id})">Retry failed</button>
+        <button class="ghost" onclick="filterDomain(${d.id})">View URLs</button>
+        <button class="danger" onclick="act('delete',${d.id})">Delete</button>
+      </div></td></tr>`;
+  }).join('') : `<tr><td colspan="11" class="muted">No websites yet. Add one above to start discovering its URLs.</td></tr>`;
+
+  const sel = $('#fDomain'), cur = sel.value;
+  sel.innerHTML = '<option value="">All websites</option>' + s.domains.map(d=>`<option value="${d.id}">${esc(d.domain)}</option>`).join('');
+  sel.value = cur;
+
+  const busy = s.domains.filter(d=>d.scan_status==='scanning').length;
+  $('#live').textContent = `${busy} scanning · ${t.pending+t.running} queued · ${t.success} archived · ${t.failed} failed`;
+  const w = Object.entries(s.workers).map(([k,v])=>`<div><b>${esc(k)}</b> <span class="muted">${esc(v)}</span></div>`).join('');
+  const cd = Object.entries(s.cooldowns).map(([k,v])=>`<div class="err">${esc(LABEL[k]||k)} paused for ${v}s after a rate-limit/CAPTCHA response (not bypassed)</div>`).join('');
+  $('#workers').innerHTML = (w||'<span class="muted">Workers starting…</span>') + cd;
+}
+
+async function refreshMetrics(){
+  const m = await api('/api/metrics');
+  $('#perf').innerHTML = (m.per_service.length ? `<table><thead><tr><th>Service</th><th class="num">OK</th><th class="num">Failed</th><th class="num">Avg s</th><th class="num">Per min (10 min)</th></tr></thead><tbody>` +
+    m.per_service.map(p=>`<tr><td>${esc(LABEL[p.service]||p.service)}</td><td class="num">${p.ok||0}</td><td class="num">${p.failed||0}</td><td class="num">${p.avg_seconds??'—'}</td><td class="num">${p.per_minute}</td></tr>`).join('') + '</tbody></table>' : '<span class="muted">No submissions yet.</span>')
+    + (m.slowest.length ? `<p class="muted" style="margin:10px 0 4px">Slowest submissions</p>` + m.slowest.map(s=>`<div class="mono">${s.duration}s · ${esc(s.url)}</div>`).join('') : '');
+  $('#scans tbody').innerHTML = m.scans.length ? m.scans.map(s=>`<tr><td>${esc(s.domain)}</td><td>${pill(s.status)}</td><td class="num">${s.pages_crawled}</td><td class="num">${s.urls_found}</td><td class="num">${s.new_urls}</td><td class="num">${s.pages_per_sec??'—'}</td></tr>`).join('') : '<tr><td colspan="6" class="muted">No scans yet.</td></tr>';
+}
+
+function qs(){
+  const p = new URLSearchParams({page});
+  for (const [k,id] of [['q','q'],['domain_id','fDomain'],['service','fService'],['status','fStatus']]) if ($('#'+id).value) p.set(k,$('#'+id).value);
+  return p;
+}
+async function refreshUrls(){
+  const r = await api('/api/urls?'+qs());
+  $('#urls tbody').innerHTML = r.items.length ? r.items.map(u=>{
+    const st = u.sub_status || 'never';
+    const link = u.archive_url ? (u.archive_url.startsWith('http') ? `<a href="${esc(u.archive_url)}" target="_blank" rel="noopener">Open snapshot</a>` : `<span class="mono">${esc(u.archive_url)}</span>`) : '<span class="muted">—</span>';
+    return `<tr><td class="mono">${esc(u.normalized_url)}${u.final_url?`<div class="muted">redirects to ${esc(u.final_url)}</div>`:''}</td>
+      <td>${u.http_status??`<span class="err">${esc(u.error||'unchecked')}</span>`}</td><td>${esc(u.source)}</td>
+      <td>${pill(st)} ${u.service?`<span class="muted">${esc(LABEL[u.service]||u.service)}</span>`:''}${u.sub_error&&st!=='success'?`<div class="err">${esc(u.sub_error)}</div>`:''}</td>
+      <td>${link}</td>
+      <td><div class="acts"><button class="ghost" onclick="showHistory(${u.id})">History (${u.n_subs})</button>
+      <button class="ghost" onclick="rearchive(${u.id})">Archive again</button></div></td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="muted">No URLs match these filters.</td></tr>';
+  $('#pageInfo').textContent = `Page ${r.page} of ${r.pages} · ${r.total} URLs`;
+  $('#prev').disabled = r.page<=1; $('#next').disabled = r.page>=r.pages;
+  const p = new URLSearchParams(); if ($('#fDomain').value) p.set('domain_id',$('#fDomain').value);
+  $('#csvLink').href = '/api/export?'+p; p.set('format','json'); $('#jsonLink').href = '/api/export?'+p;
+}
+
+async function showHistory(id){
+  const h = await api(`/api/urls/${id}/history`);
+  $('#dlgBody').innerHTML = `<h3 style="margin-top:0" class="mono">${esc(h.url.normalized_url)}</h3>
+    <p class="muted">Original: <span class="mono">${esc(h.url.original_url)}</span><br>Found by ${esc(h.url.source)} on ${ago(h.url.discovered_at)} · HTTP ${h.url.http_status??'unchecked'}</p>
+    <table><thead><tr><th>Service</th><th>Status</th><th>Queued</th><th>Finished</th><th class="num">Tries</th><th>Archive</th><th>Error</th></tr></thead><tbody>` +
+    (h.submissions.map(s=>`<tr><td>${esc(LABEL[s.service]||s.service)}</td><td>${pill(s.status)}</td><td>${ago(s.queued_at)}</td><td>${ago(s.finished_at)}</td><td class="num">${s.attempts}</td>
+      <td>${s.archive_url?(s.archive_url.startsWith('http')?`<a href="${esc(s.archive_url)}" target="_blank" rel="noopener">${esc(s.archive_id||'open')}</a>`:esc(s.archive_url)):'—'}</td><td class="err">${esc(s.error||'')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Never submitted.</td></tr>') + '</tbody></table>';
+  $('#dlg').showModal();
+}
+async function rearchive(id){ const s = services()[0]||'wayback'; await api(`/api/urls/${id}/rearchive`,'POST',{service:s}); toast('Queued a new snapshot via '+(LABEL[s]||s)); refreshAll(); }
+function filterDomain(id){ $('#fDomain').value = id; page = 1; refreshUrls(); $('#urls').scrollIntoView({behavior:'smooth'}); }
+
+async function act(kind, id){
+  try{
+    if(kind==='scan'){ await api(`/api/domains/${id}/scan`,'POST'); toast('Scan started'); }
+    else if(kind==='queue'){ const r = await api(`/api/domains/${id}/queue`,'POST',{services:services(), rearchive:$('#rearch').checked}); toast(`${r.queued} submissions queued`); }
+    else if(kind==='pause'||kind==='resume'){ await api(`/api/domains/${id}/${kind}`,'POST'); }
+    else if(kind==='retry'){ const r = await api('/api/retry-failed','POST',{domain_id:id}); toast(`${r.requeued} failed submissions re-queued`); }
+    else if(kind==='delete'){ if(!confirm('Delete this website and its archive history from the repository?')) return; await api(`/api/domains/${id}`,'DELETE'); }
+  }catch(e){ toast(e.message); }
+  refreshAll();
+}
+const refreshAll = () => Promise.all([refreshStats(), refreshMetrics()]).catch(()=>{});
+
+$('#addBtn').onclick = async () => {
+  $('#addErr').textContent = '';
+  try{
+    await api('/api/domains','POST',{url:$('#newUrl').value, max_pages:+$('#maxPages').value, include_external:$('#ext').checked, use_js:$('#js').checked});
+    $('#newUrl').value=''; toast('Website added. Discovery has started.');
+  }catch(e){ $('#addErr').textContent = e.message; }
+  refreshAll();
+};
+$('#newUrl').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#addBtn').click(); });
+$('#queueAll').onclick = async () => { const r = await api('/api/queue-all','POST',{services:services(), rearchive:$('#rearch').checked}); toast(`${r.queued} submissions queued across all websites`); refreshAll(); };
+$('#retryAll').onclick = async () => { const r = await api('/api/retry-failed','POST',{}); toast(`${r.requeued} failed submissions re-queued`); refreshAll(); };
+$('#searchBtn').onclick = () => { page=1; refreshUrls(); };
+$('#q').addEventListener('keydown', e=>{ if(e.key==='Enter'){ page=1; refreshUrls(); } });
+for (const id of ['fDomain','fService','fStatus']) $('#'+id).onchange = () => { page=1; refreshUrls(); };
+$('#prev').onclick = () => { page--; refreshUrls(); };
+$('#next').onclick = () => { page++; refreshUrls(); };
+
+refreshAll(); refreshUrls();
+setInterval(refreshAll, 2000);
+setInterval(refreshUrls, 5000);
+</script>
+</body>
+</html>
